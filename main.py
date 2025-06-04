@@ -320,7 +320,9 @@ def main():
     end = time()
     logging.info(f"Take {end - start}")
 
-    logging.info(matches_to_df(add_result))
+    match_df = matches_to_df(add_result)
+    match_df.write_csv("match_provinces.csv")
+    logging.info(match_df)
 
 
 def matches_to_df(matches: List[AddrMatch]) -> pl.DataFrame:

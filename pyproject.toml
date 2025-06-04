@@ -10,5 +10,4 @@ dependencies = [
     "pandas>=2.2.3",
     "polars>=1.30.0",
     "pyarrow>=20.0.0",
-    "thefuzz>=0.22.1",
 ]

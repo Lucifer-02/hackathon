@@ -3,11 +3,14 @@ name = "hackathon"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.11"
 dependencies = [
     "fastexcel>=0.14.0",
+    "google-re2>=1.1.20240702",
     "ipython>=9.3.0",
     "pandas>=2.2.3",
+    "pip>=25.1.1",
     "polars>=1.30.0",
     "pyarrow>=20.0.0",
+    "tqdm>=4.67.1",
 ]

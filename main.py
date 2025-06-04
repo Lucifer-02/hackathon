@@ -1,12 +1,15 @@
 from typing import Set, List, Tuple, Optional
 import re
+import re2
 from dataclasses import dataclass
 import unicodedata
 from pprint import pprint
 import logging
 from time import time
+from multiprocessing import Pool
 
 import polars as pl
+from tqdm import tqdm
 
 import variant
 import sample
@@ -51,11 +54,12 @@ def normalize(df: pl.DataFrame) -> pl.DataFrame:
 
 def match_pattern(text: str, pattern: str, ignore_case: bool = True) -> str | None:
     match = None
-
+    # re2 uses embedded flags like (?i) for case-insensitivity
     if ignore_case:
-        match = re.search(pattern, text, re.IGNORECASE)
-    else:
-        match = re.search(pattern, text)
+        pattern = "(?i)" + pattern
+
+    # Use re2.search without the flags argument
+    match = re2.search(pattern, text)
 
     if match:
         return match.group(0)
@@ -63,7 +67,7 @@ def match_pattern(text: str, pattern: str, ignore_case: bool = True) -> str | No
     return None
 
 
-def prepare_map():
+def prepare_map() -> Tuple[List[Ward], List[District], List[Province]]:
     df = pl.read_excel("./dataset/Danh sách cấp xã ___25_05_2025.xls")
 
     df = df.drop("Tên Tiếng Anh").rename(
@@ -169,9 +173,8 @@ def prepare_map():
     logging.info(f"number of ward variants: {size_areas(wards)}")
     logging.info(f"number of district variants: {size_areas(districts)}")
     logging.info(f"number of province variants: {size_areas(provinces)}")
-    return provinces
-    # return districts
-    # return wards
+
+    return (wards, districts, provinces)
 
 
 def size_areas(areas: List[Area]) -> int:
@@ -191,10 +194,10 @@ def remove_accents(input_str):
 
 def match_word_string_multiple(
     text: str, words: Set[str], case_sensitive: bool = False
-) -> Tuple[bool, Optional[int], Optional[int]]:
+) -> List[Tuple[int, int]]:
     """
     Checks if any of the given 'words' exist as whole words within 'text' and
-    returns the start and end indices of the first match found.
+    returns a list of start and end indices for all matches found.
 
     A 'whole word' is defined by word boundaries (\b), meaning it's either at
     the beginning/end of the string or surrounded by non-word characters (like spaces, punctuation, etc.).
@@ -205,14 +208,11 @@ def match_word_string_multiple(
                                 If False (default), it ignores case.
 
     Returns:
-        Tuple[bool, Optional[int], Optional[int]]:
-            A tuple containing:
-            - bool: True if any of the words are found, False otherwise.
-            - Optional[int]: The start index of the first match if found, else None.
-            - Optional[int]: The end index of the first match if found, else None.
+        List[Tuple[int, int]]: A list of tuples, where each tuple is (start_index, end_index)
+                                for a found match. Returns an empty list if no matches are found.
     """
     if not words:
-        return False, None, None  # No words to search for
+        return []  # No words to search for
 
     # Escape each word in the list to treat any special regex characters within it
     # literally. Then join them with '|' (OR) to create a single pattern.
@@ -222,114 +222,194 @@ def match_word_string_multiple(
     words_pattern = "|".join(escaped_words)
 
     # Construct the regex pattern using word boundaries '\b'.
-    # '\b' matches the position between a word character (\w) and a non-word
-    # character (\W), or at the start/end of the string.
     pattern = r"\b(?:" + words_pattern + r")\b"
 
-    # Set regex flags. By default, we ignore case.
-    flags = 0
+    # re2 uses embedded flags like (?i) for case-insensitivity
     if not case_sensitive:
-        flags |= re.IGNORECASE  # Add the IGNORECASE flag
+        pattern = "(?i)" + pattern
 
-    # Use re.search() to find the pattern anywhere in the text.
-    # If a match is found, re.search returns a match object. Otherwise, it returns None.
-    match_object = re.search(pattern, text, flags)
+    # Use re2.finditer() to get an iterator over all matches
+    matches = []
+    for match_object in re2.finditer(pattern, text):
+        matches.append(
+            (match_object.start(), match_object.end() - 1)
+        )  # -1 at end to take actual index
 
-    if match_object:
-        # If a match is found, return True and its start/end indices
-        return True, match_object.start(), match_object.end()
-    else:
-        # If no match is found, return False and None for indices
-        return False, None, None
+    return matches
 
 
-def match_word_string(
-    text: str, word: str, case_sensitive: bool = False
-) -> Tuple[bool, Optional[int], Optional[int]]:
-    # Escape the 'word' string to treat any special regex characters within it
-    # literally. For example, if 'word' is "a.b", re.escape makes it "a\.b".
-    escaped_word = re.escape(word)
-
-    # Construct the regex pattern using word boundaries '\b'.
-    # '\b' matches the position between a word character (\w) and a non-word
-    # character (\W), or at the start/end of the string.
-    pattern = r"\b" + escaped_word + r"\b"
-
-    # Set regex flags. By default, we ignore case.
-    flags = 0
-    if not case_sensitive:
-        flags |= re.IGNORECASE  # Add the IGNORECASE flag
-
-    match_object = re.search(pattern, text, flags)
-
-    if match_object:
-        # If a match is found, return True and its start/end indices
-        return True, match_object.start(), match_object.end()
-    else:
-        # If no match is found, return False and None for indices
-        return False, None, None
+@dataclass
+class RawAddr:
+    index: int
+    content: str
 
 
 @dataclass
 class AddrMatch:
-    index: int
-    raw_addr: str
+    raw_addr: RawAddr
     area: Area
     start_idx: int
     end_idx: int
 
 
-def main():
-    logging.basicConfig(level="INFO")
-    areas = prepare_map()
-    logging.info(f"number of areas: {len(areas)}")
+@dataclass
+class SubRawAddr:
+    raw_addr: RawAddr
+    start_idx: int
+    end_idx: int
 
-    # addrs_df = normalize(
-    #     pl.read_excel("./dataset/Advance - Sao chép.xlsx").select("ADDR")
-    # ).filter(~pl.col("ADDR").str.contains(","))
-    # print(len(addrs_df))
-    # print(addrs_df)
 
-    addrs = sample.ADDR
-    logging.info(f"number of addresses: {len(addrs)}")
+@dataclass
+class CombinedRawAddr:
+    content: str
+    schema: List[SubRawAddr]
 
-    add_result: List[AddrMatch] = []
-    start = time()
-    for addr in addrs:
-        for area in areas:
-            is_match, start_idx, end_idx = match_word_string_multiple(
-                text=addr, words=area.variants
-            )
-            if is_match and start_idx is not None and end_idx is not None:
-                add_result.append(
+
+def extract_batch(
+    batch: CombinedRawAddr, matches: List[Tuple[int, int]], area: Area
+) -> List[AddrMatch]:
+
+    result = []
+
+    for start_idx, end_idx in matches:
+        check = False
+        for sub in batch.schema:
+            if start_idx >= sub.start_idx and end_idx <= sub.end_idx:
+                result.append(
                     AddrMatch(
-                        index=0,
-                        raw_addr=addr,
+                        raw_addr=sub.raw_addr,
                         area=area,
                         start_idx=start_idx,
                         end_idx=end_idx,
                     )
                 )
-            # for variant in area.variants:
-            #     if match_word_string(text=addr, word=variant):
-            #         add_result.append(f"{addr}|{variant}|{area.name}")
-        # if len(add_result) == 0:
-        #     pprint(f"Not found {addr}")
-        # if len(add_result) >= 5:
-        #     pprint(add_result)
+                check = True
+
+        if check != True:
+            logging.info(batch)
+            logging.info(matches)
+            logging.info(f"Index: {start_idx}, {end_idx}.")
+            logging.info(f"Match substring: {batch.content[start_idx : end_idx]}")
+            logging.info(area)
+            logging.info("================================")
+    return result
+
+
+def batch_process_address(
+    addrs: List[RawAddr], areas: List[Area], batch_size: int
+) -> List[AddrMatch]:
+
+    batchs: List[CombinedRawAddr] = []
+
+    for i in tqdm(range(0, len(addrs), batch_size)):
+        batch_addr = CombinedRawAddr(content="", schema=[])
+        start_idx = 0
+        for addr in addrs[i : i + batch_size]:
+            batch_addr.content += (
+                addr.content + ";"
+            )  # add ";" to avoid mis regex match with word
+            batch_addr.schema.append(
+                SubRawAddr(
+                    raw_addr=addr,
+                    start_idx=start_idx,
+                    end_idx=start_idx + len(addr.content) - 1,
+                )
+            )
+
+            start_idx += len(addr.content) + 1
+
+        assert (
+            len(batch_addr.schema) <= batch_size
+        ), f"{batch_addr},{len(batch_addr.schema)} not equal {batch_size}"
+        assert (
+            len(batch_addr.content) == batch_addr.schema[-1].end_idx + 2
+        ), f"{batch_addr}\n len: {len(batch_addr.content)}"
+        batchs.append(batch_addr)
+
+    assert len(addrs) == sum([len(batch.schema) for batch in batchs])
+
+    results = []
+    for batch in tqdm(batchs):
+        for area in areas:
+            # match_word_string_multiple now returns a list of (start, end) tuples
+            matches = match_word_string_multiple(
+                text=batch.content, words=area.variants
+            )
+            results.extend(extract_batch(batch=batch, matches=matches, area=area))
+
+    return results
+
+
+def process_address(addr: RawAddr, areas: List[Area]) -> List[AddrMatch]:
+    results = []
+    for area in areas:
+        # match_word_string_multiple now returns a list of (start, end) tuples
+        matches = match_word_string_multiple(text=addr.content, words=area.variants)
+        for start_idx, end_idx in matches:
+            results.append(
+                AddrMatch(
+                    raw_addr=addr,
+                    area=area,
+                    start_idx=start_idx,
+                    end_idx=end_idx,
+                )
+            )
+    return results
+
+
+def main():
+    logging.basicConfig(level="INFO")
+    wards, districts, provinces = prepare_map()
+    areas = wards
+    logging.info(f"number of areas: {len(areas)}")
+
+    sample_addrs = (
+        normalize(pl.read_excel("./dataset/Advance - Sao chép.xlsx").select("ADDR"))
+        .select("ADDR")
+        .to_series()
+        .to_list()
+    )
+    addrs: List[RawAddr] = [RawAddr(index=0, content=addr) for addr in sample_addrs]
+
+    # addrs: List[RawAddr] = [RawAddr(index=0, content=addr) for addr in sample.ADDR]
+    logging.info(f"number of addresses: {len(addrs)}")
+
+    add_result: List[AddrMatch] = []
+
+    start = time()
+
+    # for addr in addrs:
+    #     add_result.extend(process_address(addr, areas))
+
+    add_result.extend(batch_process_address(addrs=addrs, areas=areas, batch_size=5000))
+
+    # # Prepare arguments for starmap: a list of tuples (addr, areas)
+    # # tasks = [(addr, areas) for addr in addrs]
+    # tasks = [(addr, areas) for addr in addrs]
+    #
+    # # Use multiprocessing Pool to parallelize the process_address function
+    # add_result: List[AddrMatch] = []
+    # with Pool() as pool:
+    #     results = pool.starmap(process_address, tasks)
+    #
+    # # Flatten the list of lists into a single list of AddrMatch objects
+    # for res_list in results:
+    #     add_result.extend(res_list)
+
     end = time()
+
     logging.info(f"Take {end - start}")
 
     match_df = matches_to_df(add_result)
-    match_df.write_csv("match_provinces.csv")
+    match_df.write_csv("match_provinces2.csv")
     logging.info(match_df)
 
 
 def matches_to_df(matches: List[AddrMatch]) -> pl.DataFrame:
     return pl.DataFrame(
         {
-            "index": [m.index for m in matches],
-            "raw_addr": [m.raw_addr for m in matches],
+            "index": [m.raw_addr.index for m in matches],
+            "addr": [m.raw_addr.content for m in matches],
             "area": [m.area.name for m in matches],
             "start_idx": [m.start_idx for m in matches],
             "end_idx": [m.end_idx for m in matches],

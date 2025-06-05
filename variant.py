@@ -9,35 +9,40 @@ def variant_names(name: str, is_shorten: bool = True) -> Set[str]:
         assert word != " "
         assert word != "", f"{words}"
 
+    # logging.info(f"Shorten: {is_shorten}")
+    # print(f"Shorten: {is_shorten}")
+
     result = []
     result.append(name)
 
-    if is_shorten:
-        match len(words):
-            case 1:
-                result.append(words[0])
+    match len(words):
+        case 1:
+            result.append(words[0])
 
-            case 2:
+        case 2:
+            result.append(words[0] + words[1])
+            result.append(words[0] + " " + words[1])
+            if is_shorten:
                 result.append(words[0][0] + words[1][0])
-                result.append(words[0] + words[1])
-                result.append(words[0] + " " + words[1])
                 result.append(words[0][0] + words[1])
                 result.append(words[0][0] + words[1][:2])
                 result.append(words[0][0] + "." + words[1])
                 result.append(words[0][0] + "." + words[1][:2])
+
                 if len(words[0]) > 2:
                     result.append(words[0][:2] + "." + words[1])
                     result.append(words[0][:2] + " " + words[1])
 
-            case 3:
-                result.append(words[0] + " " + words[1] + " " + words[2])
+        case 3:
+            result.append(words[0] + " " + words[1] + " " + words[2])
+            if is_shorten:
                 result.append(words[0][0] + words[1][0] + words[2][0])
-            case 4:
-                result.append(name)
-            case 5:
-                result.append(name)
-            case _:
-                logging.error(ValueError(name))
+        case 4:
+            result.append(name)
+        case 5:
+            result.append(name)
+        case _:
+            logging.error(ValueError(name))
 
     return set(result)
 
@@ -52,6 +57,7 @@ def variant_level(level: str) -> Set[str]:
     if level == "phuong":
         result.add("p.")
         result.add("p ")
+        result.add("p")
         result.add("phuong ")
 
     if level == "xa":
@@ -95,11 +101,16 @@ def variant_level(level: str) -> Set[str]:
 def generate_variants(name: str, level: str, is_shorten: bool = True) -> Set[str]:
     variants = combine_variants(
         variant_level(level), variant_names(name, is_shorten)
-    ).union(variant_names(name))
+    ).union(variant_names(name, is_shorten))
     return variants
 
 
-# Example usage
-base = "ha noi"
-level = "thanh pho"
-print(generate_variants(base, level))
+def main():
+    # Example usage
+    base = "2"
+    level = "phuong"
+    print(generate_variants(base, level, is_shorten=False))
+
+
+if __name__ == "__main__":
+    main()

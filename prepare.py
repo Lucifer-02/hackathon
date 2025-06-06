@@ -44,10 +44,11 @@ def normalize(df: pl.DataFrame) -> pl.DataFrame:
         [
             (
                 pl.col(col)
+                .str.to_lowercase()
                 .str.strip_chars()
                 .str.strip_chars_start()
                 .str.strip_chars_end()
-                .str.to_lowercase()
+                .str.replace_all(r" +", " ")
                 if df.schema[col] == pl.String
                 else pl.col(col)
             )
@@ -110,9 +111,9 @@ def prepare_areas() -> Tuple[List[Ward], List[District], List[Province]]:
     # print(df.select(pl.col("district level")).to_series().to_list())
     # print(df.filter(pl.col("district level").is_null()).select(pl.col("district")))
     # print(df.select(pl.col("district")))
-    df = standadize_areas1()
+    # df = standadize_areas1()
     # print(df)
-    # df = pl.read_parquet("./dataset/param_c06_distilled.parquet")
+    df = pl.read_parquet("./dataset/param_c06_distilled.parquet")
     # print(df.filter(pl.col("province code").eq("87")).select(pl.col("ward")).to_series().to_list())
     # print(df)
     provinces_df = df.select(

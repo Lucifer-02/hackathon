@@ -74,6 +74,7 @@ def variant_level(level: str) -> Set[str]:
         result.add("quan ")
         result.add("q.")
         result.add("q ")
+        result.add("q")
 
     if level == "huyen":
         result.add("huyen ")

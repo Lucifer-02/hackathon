@@ -10,6 +10,7 @@ import polars as pl
 from tqdm import tqdm
 
 import sample
+import inference
 from model import *
 from prepare import prepare_areas, normalize
 
@@ -91,9 +92,25 @@ def extract_batch(
     return result
 
 
-def batch_address_match(
-    addrs: Sequence[RawAddr], areas: Sequence[Area], batch_size: int
+def batch_address_match_process(
+    batchs: List[CombinedRawAddr], areas: Sequence[Area]
 ) -> List[AddrMatch]:
+
+    results = []
+    for batch in tqdm(batchs):
+        for area in areas:
+            # match_word_string_multiple now returns a list of (start, end) tuples
+            matches = match_word_string_multiple(
+                text=batch.content, words=area.variants
+            )
+            results.extend(extract_batch(batch=batch, matches=matches, area=area))
+
+    return results
+
+
+def batch_address_match(
+    addrs: Sequence[RawAddr], batch_size: int
+) -> List[CombinedRawAddr]:
 
     batchs: List[CombinedRawAddr] = []
 
@@ -124,16 +141,7 @@ def batch_address_match(
 
     assert len(addrs) == sum([len(batch.schema) for batch in batchs])
 
-    results = []
-    for batch in tqdm(batchs):
-        for area in areas:
-            # match_word_string_multiple now returns a list of (start, end) tuples
-            matches = match_word_string_multiple(
-                text=batch.content, words=area.variants
-            )
-            results.extend(extract_batch(batch=batch, matches=matches, area=area))
-
-    return results
+    return batchs
 
 
 def address_match(addr: RawAddr, areas: Sequence[Area]) -> List[AddrMatch]:
@@ -194,21 +202,19 @@ def matches_to_df(matches: List[AddrMatch]) -> pl.DataFrame:
 
 
 def process_address(
-    addrs: List[RawAddr], areas: Sequence[Area], file_name: str, batch_size: int = 1000
-):
+    addrs: List[RawAddr], areas: Sequence[Area], file_name: str, batch_size: int = 5000
+) -> pl.DataFrame:
     # addrs: List[RawAddr] = [RawAddr(index=0, content=addr) for addr in sample.ADDR]
     logging.info(f"number of addresses: {len(addrs)}")
 
     areas_result: List[AddrMatch] = []
 
-    start = time()
-
     # for addr in tqdm(addrs):
     #     areas_result.extend(address_match(addr, areas))
+    # pprint(address_match(addrs[49], areas))
 
-    areas_result.extend(
-        batch_address_match(addrs=addrs, areas=areas, batch_size=batch_size)
-    )
+    batchs = batch_address_match(addrs=addrs, batch_size=batch_size)
+    areas_result.extend(batch_address_match_process(batchs=batchs, areas=areas))
 
     # # Prepare arguments for starmap: a list of tuples (addr, areas)
     # # tasks = [(addr, areas) for addr in addrs]
@@ -221,35 +227,54 @@ def process_address(
     # for res_list in results:
     #     province_result.extend(res_list)
 
-    end = time()
-
-    logging.info(f"Take {(end - start)}seconds")
-
     match_df = matches_to_df(areas_result)
-    logging.info(match_df)
     match_df.write_csv(f"{file_name}.csv")
     match_df.write_parquet(f"{file_name}.parquet")
+
+    return match_df
 
 
 def main():
     logging.basicConfig(level="INFO")
+
+    start = time()
     wards, districts, provinces = prepare_areas()
     # print(provinces)
     areas = provinces
     logging.info(f"number of areas: {len(areas)}")
 
-    # sample_addrs = normalize(pl.read_excel("./dataset/Advance - Sao chép.xlsx"))
+    sample_addrs = normalize(pl.read_excel("./dataset/Advance - Sao chép.xlsx"))
     # sample_addrs = normalize(pl.read_excel("./dataset/sample.xlsx"))
-    sample_addrs = normalize(pl.read_excel("./dataset/hackathon_result.xlsx"))
+    # sample_addrs = normalize(pl.read_excel("./dataset/hackathon_result.xlsx"))
 
     addrs: List[RawAddr] = [
         RawAddr(index=addr["ID"], content=addr["ADDR"])
         for addr in sample_addrs.to_dicts()
     ]
 
-    process_address(addrs=addrs, areas=provinces, file_name="province_match")
-    process_address(addrs=addrs, areas=districts, file_name="district_match")
-    process_address(addrs=addrs, areas=wards, file_name="ward_match")
+    match_provinces_df = process_address(
+        addrs=addrs, areas=provinces, file_name="province_match"
+    )
+    # print(match_provinces_df.filter(pl.col("index").eq(72)))
+    match_districts_df = process_address(
+        addrs=addrs, areas=districts, file_name="district_match"
+    )
+    # print(match_districts_df.filter(pl.col("index").eq(72)))
+    match_wards_df = process_address(addrs=addrs, areas=wards, file_name="ward_match")
+    # print(match_wards_df.filter(pl.col("index").eq(72)))
+
+    official_areas = pl.read_parquet("./dataset/param_c06_distilled.parquet")
+
+    inference.address_infer(
+        official_areas=official_areas,
+        match_wards_df=match_wards_df,
+        match_districts_df=match_districts_df,
+        match_provinces_df=match_provinces_df,
+    )
+
+    end = time()
+
+    logging.info(f"Take {(end - start)}seconds")
 
 
 if __name__ == "__main__":

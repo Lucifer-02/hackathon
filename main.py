@@ -210,6 +210,7 @@ def process_address(
 ) -> pl.DataFrame:
     # addrs: List[RawAddr] = [RawAddr(index=0, content=addr) for addr in sample.ADDR]
     logging.info(f"number of addresses: {len(addrs)}")
+    logging.info(f"number of areas: {len(areas)}")
 
     areas_result: List[AddrMatch] = []
 
@@ -248,6 +249,7 @@ def main():
     logging.info(f"number of areas: {len(areas)}")
 
     sample_addrs = normalize(pl.read_excel("./dataset/Advance - Sao chép.xlsx"))
+    # print(sample_addrs)
     # sample_addrs = normalize(pl.read_excel("./dataset/sample.xlsx"))
     # sample_addrs = normalize(pl.read_excel("./dataset/hackathon_result.xlsx"))
 
@@ -269,7 +271,7 @@ def main():
 
     official_areas = pl.read_parquet("./dataset/param_c06_distilled.parquet")
 
-    inference.address_infer(
+    result = inference.address_infer(
         official_areas=official_areas,
         match_wards_df=match_wards_df,
         match_districts_df=match_districts_df,
@@ -279,6 +281,10 @@ def main():
     end = time()
 
     logging.info(f"Take {(end - start)}seconds")
+
+    # print(sample_addrs)
+    # print(result)
+    # print(sample_addrs.join(result, left_on="ID", right_on="index", how="anti"))
 
 
 if __name__ == "__main__":

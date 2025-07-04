@@ -1,6 +1,6 @@
-from typing import Set
 import itertools
 import logging
+from typing import Set
 
 
 def variant_names(name: str, is_shorten: bool = True) -> Set[str]:
@@ -43,6 +43,11 @@ def variant_names(name: str, is_shorten: bool = True) -> Set[str]:
             result.append(name)
         case _:
             logging.error(ValueError(name))
+
+    # special cases
+    if name in ["bac tu liem", "nam tu liem"]:
+        result.append("tu liem")
+        result.append("tl")
 
     return set(result)
 

@@ -1,5 +1,3 @@
-import logging
-
 import polars as pl
 
 
@@ -10,7 +8,7 @@ def ward_district(
     factor: float = 1.0,
 ) -> pl.DataFrame:
     ward_district_df = wards.join(
-        districts.drop("addr"), on="index", how="left", suffix="_district"
+        districts.drop("addr"), on="index", how="inner", suffix="_district"
     ).rename({"start_idx": "start_idx_ward", "end_idx": "end_idx_ward"})
 
     filter1 = ward_district_df.filter(
@@ -24,8 +22,10 @@ def ward_district(
                 on=[
                     pl.col("district code"),
                     pl.col("district"),
+                    pl.col("ward code"),
+                    pl.col("ward"),
                 ],
-                how="left",
+                how="inner",
             )
             .with_columns(
                 (
@@ -59,6 +59,10 @@ def ward_district(
                 "province code",
                 "province",
                 "score",
+                # "end_idx_district",
+                # "start_idx_district",
+                # "start_idx_ward",
+                # "end_idx_ward",
             )
         )
         .sort("index")
@@ -76,7 +80,7 @@ def ward_province(
     factor: float = 2.0,
 ) -> pl.DataFrame:
     ward_district_province_df = wards.join(
-        provinces.drop("addr"), on="index", how="left", suffix="_province"
+        provinces.drop("addr"), on="index", how="inner", suffix="_province"
     ).rename({"start_idx": "start_idx_ward", "end_idx": "end_idx_ward"})
 
     filter1 = ward_district_province_df.filter(
@@ -93,7 +97,7 @@ def ward_province(
                     pl.col("ward"),
                     pl.col("province"),
                 ],
-                how="left",
+                how="inner",
             )
             .filter(pl.col("start_idx_province").is_not_null())
             .with_columns(
@@ -141,8 +145,8 @@ def ward_district_province(
     factor: float = 3.0,
 ) -> pl.DataFrame:
     ward_district_province_df = (
-        wards.join(districts.drop("addr"), on="index", how="left", suffix="_district")
-        .join(provinces.drop("addr"), on="index", how="left", suffix="_province")
+        wards.join(districts.drop("addr"), on="index", how="inner", suffix="_district")
+        .join(provinces.drop("addr"), on="index", how="inner", suffix="_province")
         .rename({"start_idx": "start_idx_ward", "end_idx": "end_idx_ward"})
     )
 
@@ -151,7 +155,7 @@ def ward_district_province(
         pl.col("end_idx_district") < pl.col("start_idx_province"),
     )
 
-    print(filter1.filter(pl.col("index").eq(8544)).write_csv("test1.csv"))
+    # print(filter1.filter(pl.col("index").eq(8544)).write_csv("test1.csv"))
 
     result = (
         (
@@ -159,13 +163,13 @@ def ward_district_province(
                 filter1,
                 on=[
                     pl.col("ward code"),
-                    pl.col("district code"),
                     pl.col("ward"),
                     pl.col("district"),
-                    pl.col("province code"),
+                    pl.col("district code"),
                     pl.col("province"),
+                    pl.col("province code"),
                 ],
-                how="left",
+                how="inner",
             )
             .filter(pl.col("start_idx_district").is_not_null())
             # scoring
@@ -236,7 +240,7 @@ def ward(
                     pl.col("ward code"),
                     pl.col("ward"),
                 ],
-                how="left",
+                how="inner",
             ).filter(pl.col("start_idx_ward").is_not_null())
         )
         .with_columns(
@@ -285,7 +289,7 @@ def district(
                     pl.col("district code"),
                     pl.col("district"),
                 ],
-                how="left",
+                how="inner",
             ).filter(pl.col("start_idx_district").is_not_null())
         )
         .with_columns(
@@ -335,7 +339,7 @@ def province(
                     pl.col("province code"),
                     pl.col("province"),
                 ],
-                how="left",
+                how="inner",
             ).filter(pl.col("start_idx_province").is_not_null())
         )
         .with_columns(
@@ -373,7 +377,7 @@ def district_province(
     factor: float = 2.0,
 ) -> pl.DataFrame:
     district_province_df = districts.join(
-        provinces.drop("addr"), on="index", how="left", suffix="_province"
+        provinces.drop("addr"), on="index", how="inner", suffix="_province"
     ).rename({"start_idx": "start_idx_district", "end_idx": "end_idx_district"})
 
     filter1 = district_province_df.filter(
@@ -390,7 +394,7 @@ def district_province(
                     pl.col("province code"),
                     pl.col("province"),
                 ],
-                how="left",
+                how="inner",
             ).filter(pl.col("start_idx_province").is_not_null())
         )
         .with_columns(
@@ -436,7 +440,7 @@ def address_infer(
     match_wards_df: pl.DataFrame,
     match_districts_df: pl.DataFrame,
     match_provinces_df: pl.DataFrame,
-):
+) -> pl.DataFrame:
     ward_district_province_df = ward_district_province(
         official_areas=official_areas,
         wards=match_wards_df,
@@ -444,20 +448,19 @@ def address_infer(
         provinces=match_provinces_df,
         factor=3.0,
     )
-    # print(ward_district_province_df.filter(pl.col("index").eq(8544)))
 
     ward_district_df = ward_district(
         official_areas=official_areas,
         wards=match_wards_df,
         districts=match_districts_df,
-        factor=2.0,
+        factor=1.5,
     )
 
     ward_province_df = ward_province(
         official_areas=official_areas,
         wards=match_wards_df,
         provinces=match_provinces_df,
-        factor=2.0,
+        factor=1.5,
     )
 
     district_province_df = district_province(
@@ -470,7 +473,7 @@ def address_infer(
     province_df = province(
         official_areas=official_areas,
         provinces=match_provinces_df,
-        factor=0.2,
+        factor=0.5,
     )
 
     district_df = district(
@@ -482,8 +485,12 @@ def address_infer(
     ward_df = ward(
         official_areas=official_areas,
         wards=match_wards_df,
-        factor=0.2,
+        factor=0.02,
     )
+
+    # print(ward_district_province_df.filter(pl.col("index").eq(9)))
+    # print(ward_province_df.filter(pl.col("index").eq(9)))
+    # print(district_province_df.filter(pl.col("index").eq(9)))
 
     # print(district_province_df.filter(pl.col("index").eq(72)).write_csv("test1.csv"))
     # print(ward_district_df.filter(pl.col("index").eq(72)).write_csv("test1.csv"))
@@ -493,9 +500,9 @@ def address_infer(
             ward_district_df,
             ward_province_df,
             district_province_df,
-            # province_df,
-            # district_df,
-            # ward_df,
+            province_df,
+            district_df,
+            ward_df,
         ]
     )
     # logging.info(combine)
@@ -503,9 +510,11 @@ def address_infer(
     result_agg = combine.sort(["index", "score"], descending=[False, True]).unique(
         "index", keep="first"
     )
-    logging.info(result_agg)
+    # logging.info(result_agg)
     result_agg.write_csv("test.csv", separator=";")
-    result_agg.write_excel("test.xlsx")
+    # result_agg.write_excel("test.xlsx")
+
+    return result_agg
 
 
 def main():

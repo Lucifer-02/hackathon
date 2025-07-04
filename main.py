@@ -1,18 +1,24 @@
-from typing import Sequence, Set, List, Tuple
-import re
-import re2
-from pprint import pprint
 import logging
+import re
 from time import time
-from multiprocessing import Pool
+from typing import List, Sequence, Set, Tuple
 
 import polars as pl
+import re2
 from tqdm import tqdm
 
-import sample
 import inference
-from model import *
-from prepare import prepare_areas, normalize
+from model import (
+    AddrMatch,
+    Area,
+    CombinedRawAddr,
+    District,
+    Province,
+    RawAddr,
+    SubRawAddr,
+    Ward,
+)
+from prepare import normalize, prepare_areas
 
 
 def match_word_string_multiple(
@@ -43,7 +49,6 @@ def match_word_string_multiple(
     # to the entire set of words.
     escaped_words = [re.escape(word) for word in words]
     words_pattern = "|".join(escaped_words)
-
     # Construct the regex pattern using word boundaries '\b'.
     pattern = r"\b(?:" + words_pattern + r")\b"
 
@@ -64,7 +69,6 @@ def match_word_string_multiple(
 def extract_batch(
     batch: CombinedRawAddr, matches: List[Tuple[int, int]], area: Area
 ) -> List[AddrMatch]:
-
     result = []
 
     for start_idx, end_idx in matches:
@@ -81,11 +85,11 @@ def extract_batch(
                 )
                 check = True
 
-        if check != True:
+        if not check:
             logging.info(batch)
             logging.info(matches)
             logging.info(f"Index: {start_idx}, {end_idx}.")
-            logging.info(f"Match substring: {batch.content[start_idx : end_idx]}")
+            logging.info(f"Match substring: {batch.content[start_idx:end_idx]}")
             logging.info(area)
             logging.info("================================")
 
@@ -95,7 +99,6 @@ def extract_batch(
 def batch_address_match_process(
     batchs: List[CombinedRawAddr], areas: Sequence[Area]
 ) -> List[AddrMatch]:
-
     results = []
     for batch in tqdm(batchs):
         for area in areas:
@@ -111,7 +114,6 @@ def batch_address_match_process(
 def batch_address_match(
     addrs: Sequence[RawAddr], batch_size: int
 ) -> List[CombinedRawAddr]:
-
     batchs: List[CombinedRawAddr] = []
 
     for i in tqdm(range(0, len(addrs), batch_size)):
@@ -131,12 +133,12 @@ def batch_address_match(
 
             start_idx += len(addr.content) + 1
 
-        assert (
-            len(batch_addr.schema) <= batch_size
-        ), f"{batch_addr},{len(batch_addr.schema)} not equal {batch_size}"
-        assert (
-            len(batch_addr.content) == batch_addr.schema[-1].end_idx + 2
-        ), f"{batch_addr}\n len: {len(batch_addr.content)}"
+        assert len(batch_addr.schema) <= batch_size, (
+            f"{batch_addr},{len(batch_addr.schema)} not equal {batch_size}"
+        )
+        assert len(batch_addr.content) == batch_addr.schema[-1].end_idx + 2, (
+            f"{batch_addr}\n len: {len(batch_addr.content)}"
+        )
         batchs.append(batch_addr)
 
     assert len(addrs) == sum([len(batch.schema) for batch in batchs])
@@ -162,7 +164,6 @@ def address_match(addr: RawAddr, areas: Sequence[Area]) -> List[AddrMatch]:
 
 
 def matches_to_df(matches: List[AddrMatch]) -> pl.DataFrame:
-
     match matches[0].area:
         case Ward():
             return pl.DataFrame(
@@ -202,7 +203,10 @@ def matches_to_df(matches: List[AddrMatch]) -> pl.DataFrame:
 
 
 def process_address(
-    addrs: List[RawAddr], areas: Sequence[Area], file_name: str, batch_size: int = 5000
+    addrs: List[RawAddr],
+    areas: Sequence[Area],
+    file_name: str,
+    batch_size: int = 5000,
 ) -> pl.DataFrame:
     # addrs: List[RawAddr] = [RawAddr(index=0, content=addr) for addr in sample.ADDR]
     logging.info(f"number of addresses: {len(addrs)}")

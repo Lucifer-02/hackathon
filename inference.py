@@ -1,4 +1,3 @@
-from pprint import pprint
 import logging
 
 import polars as pl
@@ -38,9 +37,9 @@ def ward_district(
                                 + 1
                             )
                             + (pl.col("end_idx_ward") - pl.col("start_idx_ward") + 1)
-                            * 0.5
                             # distance of each area word also matter
                             - (pl.col("start_idx_district") - pl.col("end_idx_ward"))
+                            * 0.5
                         )
                         * factor
                     ).alias("score")
@@ -76,7 +75,6 @@ def ward_province(
     provinces: pl.DataFrame,
     factor: float = 2.0,
 ) -> pl.DataFrame:
-
     ward_district_province_df = wards.join(
         provinces.drop("addr"), on="index", how="left", suffix="_province"
     ).rename({"start_idx": "start_idx_ward", "end_idx": "end_idx_ward"})
@@ -108,7 +106,6 @@ def ward_province(
                                 + 1
                             )
                             + (pl.col("end_idx_ward") - pl.col("start_idx_ward") + 1)
-                            * 0.5
                         )
                         * factor
                     ).alias("score")
@@ -143,7 +140,6 @@ def ward_district_province(
     provinces: pl.DataFrame,
     factor: float = 3.0,
 ) -> pl.DataFrame:
-
     ward_district_province_df = (
         wards.join(districts.drop("addr"), on="index", how="left", suffix="_district")
         .join(provinces.drop("addr"), on="index", how="left", suffix="_province")
@@ -170,7 +166,8 @@ def ward_district_province(
                     pl.col("province"),
                 ],
                 how="left",
-            ).filter(pl.col("start_idx_district").is_not_null())
+            )
+            .filter(pl.col("start_idx_district").is_not_null())
             # scoring
             .with_columns(
                 (
@@ -187,13 +184,14 @@ def ward_district_province(
                                 + 1
                             )
                             + (pl.col("end_idx_ward") - pl.col("start_idx_ward") + 1)
-                            * 0.5
                             # distance of each area word also matter
                             - (
                                 pl.col("start_idx_province")
                                 - pl.col("end_idx_district")
                             )
+                            * 0.5
                             - (pl.col("start_idx_district") - pl.col("end_idx_ward"))
+                            * 0.5
                         )
                         * factor
                     ).alias("score")
@@ -226,7 +224,6 @@ def ward(
     wards: pl.DataFrame,
     factor: float = 2.0,
 ) -> pl.DataFrame:
-
     wards_df = wards.rename({"start_idx": "start_idx_ward", "end_idx": "end_idx_ward"})
 
     filter1 = wards_df
@@ -245,7 +242,7 @@ def ward(
         .with_columns(
             (
                 (
-                    ((pl.col("end_idx_ward") - pl.col("start_idx_ward") + 1)) * factor
+                    (pl.col("end_idx_ward") - pl.col("start_idx_ward") + 1) * factor
                 ).alias("score")
             )
         )
@@ -274,7 +271,6 @@ def district(
     districts: pl.DataFrame,
     factor: float = 2.0,
 ) -> pl.DataFrame:
-
     district_df = districts.rename(
         {"start_idx": "start_idx_district", "end_idx": "end_idx_district"}
     )
@@ -295,7 +291,7 @@ def district(
         .with_columns(
             (
                 (
-                    ((pl.col("end_idx_district") - pl.col("start_idx_district") + 1))
+                    (pl.col("end_idx_district") - pl.col("start_idx_district") + 1)
                     * factor
                 ).alias("score")
             )
@@ -325,7 +321,6 @@ def province(
     provinces: pl.DataFrame,
     factor: float = 1.0,
 ) -> pl.DataFrame:
-
     province_df = provinces.rename(
         {"start_idx": "start_idx_province", "end_idx": "end_idx_province"}
     )
@@ -346,7 +341,7 @@ def province(
         .with_columns(
             (
                 (
-                    ((pl.col("end_idx_province") - pl.col("start_idx_province") + 1))
+                    (pl.col("end_idx_province") - pl.col("start_idx_province") + 1)
                     * factor
                 ).alias("score")
             )
@@ -377,7 +372,6 @@ def district_province(
     provinces: pl.DataFrame,
     factor: float = 2.0,
 ) -> pl.DataFrame:
-
     district_province_df = districts.join(
         provinces.drop("addr"), on="index", how="left", suffix="_province"
     ).rename({"start_idx": "start_idx_district", "end_idx": "end_idx_district"})
@@ -411,6 +405,7 @@ def district_province(
                         )
                         # distance of each area word also matter
                         - (pl.col("start_idx_province") - pl.col("end_idx_district"))
+                        * 0.5
                     )
                     * factor
                 ).alias("score")
@@ -442,7 +437,6 @@ def address_infer(
     match_districts_df: pl.DataFrame,
     match_provinces_df: pl.DataFrame,
 ):
-
     ward_district_province_df = ward_district_province(
         official_areas=official_areas,
         wards=match_wards_df,
@@ -476,19 +470,19 @@ def address_infer(
     province_df = province(
         official_areas=official_areas,
         provinces=match_provinces_df,
-        factor=1,
+        factor=0.2,
     )
 
     district_df = district(
         official_areas=official_areas,
         districts=match_districts_df,
-        factor=1,
+        factor=0.2,
     )
 
     ward_df = ward(
         official_areas=official_areas,
         wards=match_wards_df,
-        factor=1,
+        factor=0.2,
     )
 
     # print(district_province_df.filter(pl.col("index").eq(72)).write_csv("test1.csv"))
@@ -499,9 +493,9 @@ def address_infer(
             ward_district_df,
             ward_province_df,
             district_province_df,
-            province_df,
-            district_df,
-            ward_df,
+            # province_df,
+            # district_df,
+            # ward_df,
         ]
     )
     # logging.info(combine)
